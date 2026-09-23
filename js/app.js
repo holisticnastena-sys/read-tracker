@@ -106,7 +106,7 @@ function renderHome(){
   const counts=Object.fromEntries(['Прочитано','Читаю','К прочтению','На паузе','Брошено'].map(s=>[s,state.books.filter(b=>b.status===s).length]));
   return `<div class="page" id="homePage">
     <section class="hero">
-      <div class="hero-copy"><div class="eyebrow">Личная библиотека</div><h1>Книги, которые<br>живут со мной.</h1><p>Текущие книги, недавние открытия, серии и следующая история — всё собирается автоматически из Excel.</p></div>
+      <div class="hero-copy"><div class="eyebrow">Личная библиотека</div><h1>Книги, которые<br>живут со мной.</h1><p>Текущие книги, недавние открытия, серии и следующая история.</p></div>
       <div class="hero-card"><div class="year">Мой ${currentYear()}</div><div><div class="hero-number">${yearBooks.length}</div><div>прочитано в этом году</div></div><div class="hero-meta"><span>🎧 ${oneDec(audioHours)} ч</span><span>📖 ${pages} стр.</span>${rating!==null?`<span>★ ${oneDec(rating)}</span>`:''}</div></div>
     </section>
 
