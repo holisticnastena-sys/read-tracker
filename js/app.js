@@ -191,8 +191,20 @@ function bindGlobalSearch(){
   $('#openSearch').addEventListener('click',()=>{dlg.showModal(); setTimeout(()=>input.focus(),50)});
   input.addEventListener('input',()=>{const q=input.value.trim().toLowerCase(); const arr=q?state.books.filter(b=>[b.title,b.author,b.series].some(x=>x.toLowerCase().includes(q))).slice(0,12):[];results.innerHTML=arr.map(b=>`<div class="search-result" data-search-book="${b.id}" role="button">${coverHTML(b,false)}<div><strong>${esc(b.title)}</strong><div class="muted">${esc(b.author)}</div></div></div>`).join('')||(q?'<div class="empty-state">Ничего не найдено</div>':'<div class="muted" style="padding:16px">Начни вводить название, автора или серию.</div>'); $$('[data-search-book]',results).forEach(x=>x.addEventListener('click',()=>{dlg.close();showBook(x.dataset.searchBook)}));});
 }
+function handleRouteChange(){
+  render();
+  requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }));
+}
+
 async function init(){
-  try { await loadBooks(); render(); bindGlobalSearch(); window.addEventListener('hashchange',render); }
+  try {
+    await loadBooks();
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    render();
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    bindGlobalSearch();
+    window.addEventListener('hashchange', handleRouteChange);
+  }
   catch(e){ $('#app').innerHTML=`<div class="empty-state"><h2>Не удалось загрузить Excel</h2><p>${esc(e.message)}</p><p>Проверь, что <strong>books.xlsx</strong> лежит рядом с index.html и сайт открыт через GitHub Pages или локальный веб‑сервер.</p></div>`; console.error(e); }
 }
 init();
