@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f6f0ea" />
+  <title>Reading Tracker</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="#home" aria-label="Reading Tracker">Reading <span>Tracker</span></a>
+      <nav class="nav" aria-label="Основная навигация">
+        <a href="#home" data-route="home" class="active">Главная</a>
+        <a href="#library" data-route="library">Библиотека</a>
+        <a href="#series" data-route="series">Серии</a>
+        <a href="#stats" data-route="stats">Статистика</a>
+      </nav>
+      <button class="icon-btn" id="openSearch" aria-label="Поиск">⌕</button>
+    </div>
+  </header>
+
+  <main id="app" class="shell">
+    <section class="loading-state">
+      <div class="spinner"></div>
+      <p>Загружаю библиотеку…</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell">Reading Tracker · данные из <strong>books.xlsx</strong></div>
+  </footer>
+
+  <dialog id="bookDialog" class="book-dialog"></dialog>
+  <dialog id="searchDialog" class="search-dialog">
+    <form method="dialog" class="search-head">
+      <input id="globalSearch" type="search" placeholder="Название, автор или серия…" autocomplete="off" />
+      <button class="icon-btn" aria-label="Закрыть">×</button>
+    </form>
+    <div id="searchResults" class="search-results"></div>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
