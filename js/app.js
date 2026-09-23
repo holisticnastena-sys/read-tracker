@@ -20,6 +20,11 @@ function excelDate(v){
   const d = new Date(v);
   return isNaN(d) ? null : d;
 }
+function text(v, fallback=''){
+  if(v===null || v===undefined) return fallback;
+  const s=String(v).trim();
+  return s || fallback;
+}
 function num(v){ if(v===null||v===undefined||v==='') return null; const n=Number(String(v).replace(',','.')); return Number.isFinite(n)?n:null; }
 function fmtDate(d){ return d ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',year:'numeric'}).format(d) : '—'; }
 function fmtShortDate(d){ return d ? new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long'}).format(d) : ''; }
@@ -31,21 +36,22 @@ function coverHTML(book, badge=true){
   return `<div class="cover-wrap">${url?`<img src="${esc(url)}" alt="Обложка ${esc(book.title)}" loading="lazy" onerror="this.remove();this.parentElement.querySelector('.cover-fallback').style.display='grid'">`:''}<div class="cover-fallback" style="${url?'display:none':''}">${esc(initials(book.title))}</div>${badge && book.format==='Аудиокнига'?'<span class="format-badge">🎧</span>':''}</div>`;
 }
 function normalizeRow(r,i){
-  const format=(r['Формат']||'').trim();
+  const format=text(r['Формат']);
   const pages=num(r['Страницы']); const hours=num(r['Часы']);
   const pagesRead=num(r['Прочитано страниц']); const hoursRead=num(r['Прослушано часов']);
-  const status=statusMap[(r['Статус']||'').trim()] || (r['Статус']||'').trim();
+  const rawStatus=text(r['Статус']);
+  const status=statusMap[rawStatus] || rawStatus;
   let progress=null, progressText='';
   if(status==='Прочитано') progress=100;
   else if(format==='Аудиокнига' && hours && hoursRead!==null){ progress=Math.min(100, Math.max(0,hoursRead/hours*100)); progressText=`${oneDec(hoursRead)} из ${oneDec(hours)} ч`; }
   else if(format!=='Аудиокнига' && pages && pagesRead!==null){ progress=Math.min(100, Math.max(0,pagesRead/pages*100)); progressText=`${pagesRead} из ${pages} стр.`; }
   if(status==='Прочитано' && !progressText){ progressText=format==='Аудиокнига'&&hours?`${oneDec(hours)} ч`:pages?`${pages} стр.`:''; }
   return {
-    id:i, title:(r['Название']||'Без названия').trim(), author:(r['Автор']||'Автор не указан').trim(),
-    series:(r['Серия']||'').trim(), seriesNo:num(r['Книга в серии']), status, format,
+    id:i, title:text(r['Название'],'Без названия'), author:text(r['Автор'],'Автор не указан'),
+    series:text(r['Серия']), seriesNo:num(r['Книга в серии']), status, format,
     pages, hours, pagesRead, hoursRead,
     start:excelDate(r['Начало']), end:excelDate(r['Конец']), duration:num(r['Длительность чтения, дней'] ?? r['Общее время прочтения']),
-    rating:num(r['Оценка']), cover:(r['Обложка']||'').trim(), progress, progressText
+    rating:num(r['Оценка']), cover:text(r['Обложка']), progress, progressText
   };
 }
 async function loadBooks(){
