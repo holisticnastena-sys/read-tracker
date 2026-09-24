@@ -3,12 +3,15 @@ const DATA_FILE = 'books.xlsx';
 const state = {
   books: [],
   route: 'home',
+
   filters: {
     status: 'Все',
     format: 'Все',
     q: '',
     sort: 'recent'
-  }
+  },
+
+  statsYear: new Date().getFullYear()
 };
 
 
@@ -1957,42 +1960,401 @@ function renderSeries() {
 // СТАТИСТИКА
 // ======================================================
 
-function renderStats() {
+// ======================================================
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ СТАТИСТИКИ
+// ======================================================
 
-  const counts =
-    Object.fromEntries(
-      [
-        'Прочитано',
-        'Читаю',
-        'К прочтению',
-        'На паузе',
-        'Брошено'
-      ].map(
-        s => [
-          s,
-          state.books.filter(
-            b =>
-              b.status === s
-          ).length
-        ]
-      )
+
+// Все годы, которые встречаются в данных
+function getStatsYears() {
+
+  const years = new Set();
+
+  state.books.forEach(b => {
+
+    if (b.start) {
+      years.add(
+        b.start.getFullYear()
+      );
+    }
+
+    if (b.end) {
+      years.add(
+        b.end.getFullYear()
+      );
+    }
+
+  });
+
+  // Текущий год показываем всегда
+  years.add(
+    currentYear()
+  );
+
+  return [...years]
+    .sort(
+      (a, b) => b - a
+    );
+}
+
+
+// ------------------------------------------------------
+// Дата, по которой книга относится к году статистики
+// ------------------------------------------------------
+
+function statsDateForBook(b) {
+
+  // Для прочитанных и брошенных
+  // приоритет у даты окончания
+  if (
+    b.status === 'Прочитано' ||
+    b.status === 'Брошено'
+  ) {
+
+    return (
+      b.end ||
+      b.start ||
+      null
     );
 
+  }
 
-  const rated =
-    state.books.filter(
+
+  // Для книг в процессе и на паузе
+  // используем дату начала
+  if (
+    b.status === 'Читаю' ||
+    b.status === 'На паузе'
+  ) {
+
+    return (
+      b.start ||
+      null
+    );
+
+  }
+
+
+  return null;
+}
+
+
+// ------------------------------------------------------
+// Относится ли книга к выбранному периоду
+// ------------------------------------------------------
+
+function bookInStatsPeriod(
+  b,
+  period = state.statsYear
+) {
+
+  // За всё время
+  if (
+    period === 'all'
+  ) {
+
+    return true;
+
+  }
+
+
+  const date =
+    statsDateForBook(b);
+
+
+  return (
+    date &&
+    date.getFullYear() ===
+      Number(period)
+  );
+}
+
+
+// ------------------------------------------------------
+// Прочитанные книги за период
+// ------------------------------------------------------
+
+function completedBooksForStats(
+  period = state.statsYear
+) {
+
+  return state.books.filter(
+    b => {
+
+      if (
+        b.status !== 'Прочитано'
+      ) {
+        return false;
+      }
+
+
+      if (
+        period === 'all'
+      ) {
+        return true;
+      }
+
+
+      return (
+        b.end &&
+        b.end.getFullYear() ===
+          Number(period)
+      );
+
+    }
+  );
+}
+
+
+// ------------------------------------------------------
+// ФАКТИЧЕСКИ ПРОСЛУШАННЫЕ ЧАСЫ
+//
+// Прочитано:
+// Прослушано часов,
+// а если пусто → Часы.
+//
+// Читаю / На паузе / Брошено:
+// только Прослушано часов.
+//
+// К прочтению:
+// 0.
+// ------------------------------------------------------
+
+function listenedHoursForStats(
+  period = state.statsYear
+) {
+
+  return state.books
+    .filter(
       b =>
-        b.rating !== null
+        b.format ===
+        'Аудиокнига'
+    )
+    .reduce(
+      (sum, b) => {
+
+        if (
+          b.status ===
+          'К прочтению'
+        ) {
+          return sum;
+        }
+
+
+        if (
+          !bookInStatsPeriod(
+            b,
+            period
+          )
+        ) {
+          return sum;
+        }
+
+
+        if (
+          b.status ===
+          'Прочитано'
+        ) {
+
+          return (
+            sum +
+            (
+              b.hoursRead ??
+              b.hours ??
+              0
+            )
+          );
+
+        }
+
+
+        if (
+          b.status === 'Читаю' ||
+          b.status === 'На паузе' ||
+          b.status === 'Брошено'
+        ) {
+
+          return (
+            sum +
+            (
+              b.hoursRead ??
+              0
+            )
+          );
+
+        }
+
+
+        return sum;
+
+      },
+      0
+    );
+}
+
+
+// ------------------------------------------------------
+// ФАКТИЧЕСКИ ПРОЧИТАННЫЕ СТРАНИЦЫ
+//
+// Аналогичная логика.
+// ------------------------------------------------------
+
+function readPagesForStats(
+  period = state.statsYear
+) {
+
+  return state.books
+    .filter(
+      b =>
+        b.format !==
+        'Аудиокнига'
+    )
+    .reduce(
+      (sum, b) => {
+
+        if (
+          b.status ===
+          'К прочтению'
+        ) {
+          return sum;
+        }
+
+
+        if (
+          !bookInStatsPeriod(
+            b,
+            period
+          )
+        ) {
+          return sum;
+        }
+
+
+        // Полностью прочитано
+        if (
+          b.status ===
+          'Прочитано'
+        ) {
+
+          return (
+            sum +
+            (
+              b.pagesRead ??
+              b.pages ??
+              0
+            )
+          );
+
+        }
+
+
+        // Читаю / пауза / брошено
+        if (
+          b.status === 'Читаю' ||
+          b.status === 'На паузе' ||
+          b.status === 'Брошено'
+        ) {
+
+          return (
+            sum +
+            (
+              b.pagesRead ??
+              0
+            )
+          );
+
+        }
+
+
+        return sum;
+
+      },
+      0
+    );
+}
+
+
+// ------------------------------------------------------
+// Средняя оценка
+// Только прочитанные книги
+// ------------------------------------------------------
+
+function averageRatingForStats(
+  period = state.statsYear
+) {
+
+  const books =
+    completedBooksForStats(
+      period
     );
 
 
-  const ar =
-    avg(
-      rated.map(
+  const ratings =
+    books
+      .map(
         b => b.rating
       )
+      .filter(
+        r => r !== null
+      );
+
+
+  if (!ratings.length) {
+    return null;
+  }
+
+
+  return (
+    ratings.reduce(
+      (a, b) => a + b,
+      0
+    ) /
+    ratings.length
+  );
+}
+
+
+// ------------------------------------------------------
+// Прочитано по месяцам
+// ------------------------------------------------------
+
+function monthlyReadingStats(
+  year
+) {
+
+  const months =
+    Array(12).fill(0);
+
+
+  state.books
+    .filter(
+      b =>
+        b.status ===
+          'Прочитано' &&
+        b.end &&
+        b.end.getFullYear() ===
+          Number(year)
+    )
+    .forEach(
+      b => {
+
+        months[
+          b.end.getMonth()
+        ]++;
+
+      }
     );
 
+
+  return months;
+}
+
+
+// ------------------------------------------------------
+// Прочитано по годам
+// ------------------------------------------------------
+
+function yearlyReadingStats() {
 
   const years = {};
 
@@ -2007,21 +2369,633 @@ function renderStats() {
     .forEach(
       b => {
 
-        const y =
+        const year =
           b.end.getFullYear();
 
-        years[y] =
-          (years[y] || 0) + 1;
+
+        years[year] =
+          (
+            years[year] ||
+            0
+          ) + 1;
 
       }
     );
 
 
-  const maxY =
+  return years;
+}
+
+
+// ------------------------------------------------------
+// Книги, с которыми пользователь взаимодействовал
+// в выбранном периоде
+// ------------------------------------------------------
+
+function activeStatsBooks(
+  period = state.statsYear
+) {
+
+  return state.books.filter(
+    b => {
+
+      if (
+        b.status ===
+        'К прочтению'
+      ) {
+        return false;
+      }
+
+
+      return bookInStatsPeriod(
+        b,
+        period
+      );
+
+    }
+  );
+}
+
+
+// ------------------------------------------------------
+// Распределение форматов
+// ------------------------------------------------------
+
+function formatStats(
+  period = state.statsYear
+) {
+
+  const books =
+    activeStatsBooks(
+      period
+    );
+
+
+  const audio =
+    books.filter(
+      b =>
+        b.format ===
+        'Аудиокнига'
+    ).length;
+
+
+  const regular =
+    books.filter(
+      b =>
+        b.format !==
+        'Аудиокнига'
+    ).length;
+
+
+  return {
+    audio,
+    regular,
+    total:
+      audio + regular
+  };
+}
+
+
+// ------------------------------------------------------
+// Распределение оценок
+// ------------------------------------------------------
+
+function ratingDistribution(
+  period = state.statsYear
+) {
+
+  const result = {
+    5: 0,
+    4: 0,
+    3: 0,
+    2: 0,
+    1: 0
+  };
+
+
+  completedBooksForStats(
+    period
+  )
+    .filter(
+      b =>
+        b.rating !== null
+    )
+    .forEach(
+      b => {
+
+        // Для диаграммы
+        // 4.5 попадёт в 5,
+        // 3.5 в 4 и т.д.
+        const rounded =
+          Math.max(
+            1,
+            Math.min(
+              5,
+              Math.round(
+                b.rating
+              )
+            )
+          );
+
+
+        result[rounded]++;
+
+      }
+    );
+
+
+  return result;
+}
+
+
+// ------------------------------------------------------
+// Любимые книги
+// ------------------------------------------------------
+
+function favoriteBooksForStats(
+  period = state.statsYear,
+  limit = 5
+) {
+
+  return completedBooksForStats(
+    period
+  )
+    .filter(
+      b =>
+        b.rating !== null
+    )
+    .sort(
+      (a, b) => {
+
+        const ratingDiff =
+          b.rating -
+          a.rating;
+
+
+        if (
+          ratingDiff !== 0
+        ) {
+          return ratingDiff;
+        }
+
+
+        return byEndDesc(
+          a,
+          b
+        );
+
+      }
+    )
+    .slice(
+      0,
+      limit
+    );
+}
+
+
+// ------------------------------------------------------
+// Темп чтения
+// ------------------------------------------------------
+
+function readingPaceStats(
+  period = state.statsYear
+) {
+
+  const books =
+    completedBooksForStats(
+      period
+    )
+      .filter(
+        b =>
+          b.duration !== null &&
+          b.duration > 0
+      );
+
+
+  if (!books.length) {
+
+    return {
+      average: null,
+      fastest: null,
+      slowest: null
+    };
+
+  }
+
+
+  const average =
+    books.reduce(
+      (sum, b) =>
+        sum +
+        b.duration,
+      0
+    ) /
+    books.length;
+
+
+  const fastest =
+    [...books]
+      .sort(
+        (a, b) =>
+          a.duration -
+          b.duration
+      )[0];
+
+
+  const slowest =
+    [...books]
+      .sort(
+        (a, b) =>
+          b.duration -
+          a.duration
+      )[0];
+
+
+  return {
+    average,
+    fastest,
+    slowest
+  };
+}
+
+
+// ------------------------------------------------------
+// Брошенные книги
+// ------------------------------------------------------
+
+function abandonedStats(
+  period = state.statsYear
+) {
+
+  const books =
+    state.books.filter(
+      b =>
+        b.status ===
+          'Брошено' &&
+        bookInStatsPeriod(
+          b,
+          period
+        )
+    );
+
+
+  const audioHours =
+    books
+      .filter(
+        b =>
+          b.format ===
+          'Аудиокнига'
+      )
+      .reduce(
+        (sum, b) =>
+          sum +
+          (
+            b.hoursRead ??
+            0
+          ),
+        0
+      );
+
+
+  const pages =
+    books
+      .filter(
+        b =>
+          b.format !==
+          'Аудиокнига'
+      )
+      .reduce(
+        (sum, b) =>
+          sum +
+          (
+            b.pagesRead ??
+            0
+          ),
+        0
+      );
+
+
+  return {
+    books,
+    count:
+      books.length,
+    audioHours,
+    pages
+  };
+}
+
+
+// ------------------------------------------------------
+// Правильное окончание "книга"
+// ------------------------------------------------------
+
+function bookWord(n) {
+
+  const x =
+    Math.abs(n) % 100;
+
+  const y =
+    x % 10;
+
+
+  if (
+    x >= 11 &&
+    x <= 19
+  ) {
+    return 'книг';
+  }
+
+
+  if (y === 1) {
+    return 'книга';
+  }
+
+
+  if (
+    y >= 2 &&
+    y <= 4
+  ) {
+    return 'книги';
+  }
+
+
+  return 'книг';
+}
+
+
+function renderStats() {
+
+  const period =
+    state.statsYear;
+
+
+  const completed =
+    completedBooksForStats(
+      period
+    );
+
+
+  const audioHours =
+    listenedHoursForStats(
+      period
+    );
+
+
+  const pages =
+    readPagesForStats(
+      period
+    );
+
+
+  const averageRating =
+    averageRatingForStats(
+      period
+    );
+
+
+  const formats =
+    formatStats(
+      period
+    );
+
+
+  const ratings =
+    ratingDistribution(
+      period
+    );
+
+
+  const favorites =
+    favoriteBooksForStats(
+      period
+    );
+
+
+  const pace =
+    readingPaceStats(
+      period
+    );
+
+
+  const abandoned =
+    abandonedStats(
+      period
+    );
+
+
+  const availableYears =
+    getStatsYears();
+
+
+  const allCounts =
+    Object.fromEntries(
+      [
+        'Прочитано',
+        'Читаю',
+        'К прочтению',
+        'На паузе',
+        'Брошено'
+      ].map(
+        status => [
+          status,
+          state.books.filter(
+            b =>
+              b.status ===
+              status
+          ).length
+        ]
+      )
+    );
+
+
+  // --------------------------------------------------
+  // График
+  // --------------------------------------------------
+
+  let readingChart = '';
+
+
+  // Конкретный год → 12 месяцев
+  if (
+    period !== 'all'
+  ) {
+
+    const months =
+      monthlyReadingStats(
+        period
+      );
+
+
+    const monthNames = [
+      'Янв',
+      'Фев',
+      'Мар',
+      'Апр',
+      'Май',
+      'Июн',
+      'Июл',
+      'Авг',
+      'Сен',
+      'Окт',
+      'Ноя',
+      'Дек'
+    ];
+
+
+    const maxMonth =
+      Math.max(
+        1,
+        ...months
+      );
+
+
+    readingChart = `
+      <div class="chart-list">
+
+        ${months
+          .map(
+            (value, index) => `
+              <div class="chart-row">
+
+                <strong>
+                  ${monthNames[index]}
+                </strong>
+
+                <div class="bar">
+
+                  <span
+                    style="
+                      width:${
+                        value /
+                        maxMonth *
+                        100
+                      }%
+                    "
+                  ></span>
+
+                </div>
+
+                <strong>
+                  ${value}
+                </strong>
+
+              </div>
+            `
+          )
+          .join('')}
+
+      </div>
+    `;
+
+  }
+
+  // За всё время → по годам
+  else {
+
+    const years =
+      yearlyReadingStats();
+
+
+    const values =
+      Object.values(
+        years
+      );
+
+
+    const maxYear =
+      Math.max(
+        1,
+        ...values
+      );
+
+
+    readingChart = `
+      <div class="chart-list">
+
+        ${
+          Object.entries(
+            years
+          )
+            .sort(
+              (a, b) =>
+                Number(a[0]) -
+                Number(b[0])
+            )
+            .map(
+              ([year, value]) => `
+                <div class="chart-row">
+
+                  <strong>
+                    ${year}
+                  </strong>
+
+                  <div class="bar">
+
+                    <span
+                      style="
+                        width:${
+                          value /
+                          maxYear *
+                          100
+                        }%
+                      "
+                    ></span>
+
+                  </div>
+
+                  <strong>
+                    ${value}
+                  </strong>
+
+                </div>
+              `
+            )
+            .join('')
+
+          ||
+
+          `
+            <div class="empty-state">
+              Пока недостаточно
+              данных.
+            </div>
+          `
+        }
+
+      </div>
+    `;
+  }
+
+
+  // --------------------------------------------------
+  // Процент форматов
+  // --------------------------------------------------
+
+  const audioPercent =
+    formats.total
+      ? formats.audio /
+        formats.total *
+        100
+      : 0;
+
+
+  const bookPercent =
+    formats.total
+      ? formats.regular /
+        formats.total *
+        100
+      : 0;
+
+
+  // --------------------------------------------------
+  // Максимальное количество оценок
+  // --------------------------------------------------
+
+  const maxRatingCount =
     Math.max(
       1,
       ...Object.values(
-        years
+        ratings
       )
     );
 
@@ -2029,34 +3003,112 @@ function renderStats() {
   return `
     <div class="page">
 
-      <div class="eyebrow">
-        Цифры
-      </div>
+      <!-- ========================================== -->
+      <!-- ЗАГОЛОВОК -->
+      <!-- ========================================== -->
 
-      <h1
+      <div
+        class="section-head"
         style="
-          font-size:
-            clamp(
-              2.7rem,
-              6vw,
-              4.8rem
-            )
+          align-items:flex-end;
+          margin-bottom:38px;
         "
       >
-        Статистика
-      </h1>
 
+        <div>
+
+          <div class="eyebrow">
+            Моя история чтения
+          </div>
+
+          <h1
+            style="
+              font-size:
+                clamp(
+                  2.7rem,
+                  6vw,
+                  4.8rem
+                );
+              margin-bottom:8px;
+            "
+          >
+            Статистика
+          </h1>
+
+          <p class="muted">
+            ${
+              period === 'all'
+                ? 'За всё время'
+                : `Итоги ${period} года`
+            }
+          </p>
+
+        </div>
+
+
+        <div
+          class="toolbar"
+          style="
+            margin:0;
+            width:auto;
+          "
+        >
+
+          <select
+            id="statsYearFilter"
+            aria-label="Год статистики"
+          >
+
+            ${availableYears
+              .map(
+                year => `
+                  <option
+                    value="${year}"
+                    ${
+                      Number(period) ===
+                      year
+                        ? 'selected'
+                        : ''
+                    }
+                  >
+                    ${year}
+                  </option>
+                `
+              )
+              .join('')}
+
+            <option
+              value="all"
+              ${
+                period === 'all'
+                  ? 'selected'
+                  : ''
+              }
+            >
+              За всё время
+            </option>
+
+          </select>
+
+        </div>
+
+      </div>
+
+
+      <!-- ========================================== -->
+      <!-- ГЛАВНЫЕ ПОКАЗАТЕЛИ -->
+      <!-- ========================================== -->
 
       <div class="stats-grid">
 
         <div class="stat-card">
 
           <strong>
-            ${state.books.length}
+            ${completed.length}
           </strong>
 
           <span>
-            книг в библиотеке
+            прочитано книг
           </span>
 
         </div>
@@ -2065,11 +3117,28 @@ function renderStats() {
         <div class="stat-card">
 
           <strong>
-            ${counts['Прочитано']}
+            ${oneDec(
+              audioHours
+            )}
           </strong>
 
           <span>
-            прочитано
+            прослушано часов
+          </span>
+
+        </div>
+
+
+        <div class="stat-card">
+
+          <strong>
+            ${Math.round(
+              pages
+            )}
+          </strong>
+
+          <span>
+            прочитано страниц
           </span>
 
         </div>
@@ -2079,8 +3148,10 @@ function renderStats() {
 
           <strong>
             ${
-              ar !== null
-                ? oneDec(ar)
+              averageRating !== null
+                ? oneDec(
+                    averageRating
+                  )
                 : '—'
             }
           </strong>
@@ -2091,21 +3162,12 @@ function renderStats() {
 
         </div>
 
-
-        <div class="stat-card">
-
-          <strong>
-            ${getSeriesData().length}
-          </strong>
-
-          <span>
-            серий
-          </span>
-
-        </div>
-
       </div>
 
+
+      <!-- ========================================== -->
+      <!-- ЧТЕНИЕ ПО МЕСЯЦАМ / ГОДАМ -->
+      <!-- ========================================== -->
 
       <section class="section">
 
@@ -2118,65 +3180,25 @@ function renderStats() {
             </div>
 
             <h2>
-              Прочитано по годам
+              ${
+                period === 'all'
+                  ? 'Прочитано по годам'
+                  : 'Мой читательский год'
+              }
             </h2>
 
           </div>
 
         </div>
 
-
-        <div class="chart-list">
-
-          ${
-            Object.entries(years)
-              .sort(
-                (a, b) =>
-                  a[0] -
-                  b[0]
-              )
-              .map(
-                ([y, v]) => `
-                  <div class="chart-row">
-
-                    <strong>
-                      ${y}
-                    </strong>
-
-                    <div class="bar">
-
-                      <span
-                        style="
-                          width:${
-                            v /
-                            maxY *
-                            100
-                          }%
-                        "
-                      ></span>
-
-                    </div>
-
-                    <strong>
-                      ${v}
-                    </strong>
-
-                  </div>
-                `
-              )
-              .join('') ||
-            `
-              <div class="empty-state">
-                Недостаточно
-                дат окончания.
-              </div>
-            `
-          }
-
-        </div>
+        ${readingChart}
 
       </section>
 
+
+      <!-- ========================================== -->
+      <!-- КАК Я ЧИТАЮ -->
+      <!-- ========================================== -->
 
       <section class="section">
 
@@ -2185,11 +3207,11 @@ function renderStats() {
           <div>
 
             <div class="eyebrow">
-              Статусы
+              Форматы
             </div>
 
             <h2>
-              Состояние библиотеки
+              Как я читаю
             </h2>
 
           </div>
@@ -2199,25 +3221,513 @@ function renderStats() {
 
         <div class="stats-grid">
 
-          ${Object.entries(
-            counts
-          )
-            .map(
-              ([k, v]) => `
-                <div class="stat-card">
+          <div class="stat-card">
 
-                  <strong>
-                    ${v}
+            <strong>
+              🎧 ${formats.audio}
+            </strong>
+
+            <span>
+              ${bookWord(
+                formats.audio
+              )} в аудио
+            </span>
+
+            <div
+              class="progress"
+              style="
+                margin-top:16px
+              "
+            >
+              <span
+                style="
+                  width:${audioPercent}%
+                "
+              ></span>
+            </div>
+
+            <div
+              class="muted"
+              style="
+                margin-top:9px
+              "
+            >
+              ${oneDec(
+                audioHours
+              )} ч прослушано
+            </div>
+
+          </div>
+
+
+          <div class="stat-card">
+
+            <strong>
+              📖 ${formats.regular}
+            </strong>
+
+            <span>
+              ${
+                bookWord(
+                  formats.regular
+                )
+              } в тексте
+            </span>
+
+            <div
+              class="progress"
+              style="
+                margin-top:16px
+              "
+            >
+              <span
+                style="
+                  width:${bookPercent}%
+                "
+              ></span>
+            </div>
+
+            <div
+              class="muted"
+              style="
+                margin-top:9px
+              "
+            >
+              ${Math.round(
+                pages
+              )} стр. прочитано
+            </div>
+
+          </div>
+
+        </div>
+
+      </section>
+
+
+      <!-- ========================================== -->
+      <!-- ОЦЕНКИ -->
+      <!-- ========================================== -->
+
+      <section class="section">
+
+        <div class="section-head">
+
+          <div>
+
+            <div class="eyebrow">
+              Впечатления
+            </div>
+
+            <h2>
+              Как я оцениваю книги
+            </h2>
+
+          </div>
+
+
+          ${
+            averageRating !== null
+              ? `
+                <span class="muted">
+                  Средняя оценка —
+                  ${oneDec(
+                    averageRating
+                  )}
+                </span>
+              `
+              : ''
+          }
+
+        </div>
+
+
+        <div class="chart-list">
+
+          ${[
+            5,
+            4,
+            3,
+            2,
+            1
+          ]
+            .map(
+              rating => `
+                <div class="chart-row">
+
+                  <strong
+                    style="
+                      min-width:78px
+                    "
+                  >
+                    ${'★'.repeat(
+                      rating
+                    )}
                   </strong>
 
-                  <span>
-                    ${esc(k)}
-                  </span>
+                  <div class="bar">
+
+                    <span
+                      style="
+                        width:${
+                          ratings[rating] /
+                          maxRatingCount *
+                          100
+                        }%
+                      "
+                    ></span>
+
+                  </div>
+
+                  <strong>
+                    ${ratings[rating]}
+                  </strong>
 
                 </div>
               `
             )
             .join('')}
+
+        </div>
+
+      </section>
+
+
+      <!-- ========================================== -->
+      <!-- ЛЮБИМЫЕ КНИГИ -->
+      <!-- ========================================== -->
+
+      ${
+        favorites.length
+          ? `
+            <section class="section">
+
+              <div class="section-head">
+
+                <div>
+
+                  <div class="eyebrow">
+                    Лучшие оценки
+                  </div>
+
+                  <h2>
+                    ${
+                      period === 'all'
+                        ? 'Любимые книги'
+                        : 'Любимые книги года'
+                    }
+                  </h2>
+
+                </div>
+
+              </div>
+
+
+              <div class="cover-row">
+
+                ${favorites
+                  .map(
+                    coverCard
+                  )
+                  .join('')}
+
+              </div>
+
+            </section>
+          `
+          : ''
+      }
+
+
+      <!-- ========================================== -->
+      <!-- ТЕМП ЧТЕНИЯ -->
+      <!-- ========================================== -->
+
+      <section class="section">
+
+        <div class="section-head">
+
+          <div>
+
+            <div class="eyebrow">
+              Время
+            </div>
+
+            <h2>
+              Темп чтения
+            </h2>
+
+          </div>
+
+        </div>
+
+
+        ${
+          pace.average !== null
+            ? `
+              <div class="stats-grid">
+
+                <div class="stat-card">
+
+                  <strong>
+                    ${oneDec(
+                      pace.average
+                    )}
+                  </strong>
+
+                  <span>
+                    дней в среднем
+                    на книгу
+                  </span>
+
+                </div>
+
+
+                <div
+                  class="stat-card"
+                  data-book="${pace.fastest.id}"
+                  role="button"
+                  tabindex="0"
+                >
+
+                  <strong>
+                    ${pace.fastest.duration}
+                  </strong>
+
+                  <span>
+                    ${
+                      pace.fastest.duration === 1
+                        ? 'день'
+                        : 'дней'
+                    }
+                    — быстрее всего
+                  </span>
+
+                  <div
+                    class="book-title"
+                    style="
+                      margin-top:10px;
+                      font-size:.95rem
+                    "
+                  >
+                    ${esc(
+                      pace.fastest.title
+                    )}
+                  </div>
+
+                </div>
+
+
+                <div
+                  class="stat-card"
+                  data-book="${pace.slowest.id}"
+                  role="button"
+                  tabindex="0"
+                >
+
+                  <strong>
+                    ${pace.slowest.duration}
+                  </strong>
+
+                  <span>
+                    ${
+                      pace.slowest.duration === 1
+                        ? 'день'
+                        : 'дней'
+                    }
+                    — дольше всего
+                  </span>
+
+                  <div
+                    class="book-title"
+                    style="
+                      margin-top:10px;
+                      font-size:.95rem
+                    "
+                  >
+                    ${esc(
+                      pace.slowest.title
+                    )}
+                  </div>
+
+                </div>
+
+              </div>
+            `
+            : `
+              <div class="empty-state">
+                Пока недостаточно данных
+                о длительности чтения.
+              </div>
+            `
+        }
+
+      </section>
+
+
+      <!-- ========================================== -->
+      <!-- БРОШЕННЫЕ КНИГИ -->
+      <!-- ========================================== -->
+
+      ${
+        abandoned.count
+          ? `
+            <section class="section">
+
+              <div class="section-head">
+
+                <div>
+
+                  <div class="eyebrow">
+                    Не дочитано
+                  </div>
+
+                  <h2>
+                    Брошенные книги
+                  </h2>
+
+                </div>
+
+              </div>
+
+
+              <div class="stats-grid">
+
+                <div class="stat-card">
+
+                  <strong>
+                    ${abandoned.count}
+                  </strong>
+
+                  <span>
+                    ${bookWord(
+                      abandoned.count
+                    )} брошено
+                  </span>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                  <strong>
+                    ${oneDec(
+                      abandoned.audioHours
+                    )}
+                  </strong>
+
+                  <span>
+                    часов всё равно
+                    прослушано
+                  </span>
+
+                </div>
+
+
+                <div class="stat-card">
+
+                  <strong>
+                    ${Math.round(
+                      abandoned.pages
+                    )}
+                  </strong>
+
+                  <span>
+                    страниц всё равно
+                    прочитано
+                  </span>
+
+                </div>
+
+              </div>
+
+
+              <div
+                class="cover-row"
+                style="
+                  margin-top:30px
+                "
+              >
+
+                ${abandoned.books
+                  .slice(
+                    0,
+                    6
+                  )
+                  .map(
+                    coverCard
+                  )
+                  .join('')}
+
+              </div>
+
+            </section>
+          `
+          : ''
+      }
+
+
+      <!-- ========================================== -->
+      <!-- ЗА ВСЁ ВРЕМЯ -->
+      <!-- ========================================== -->
+
+      <section class="section">
+
+        <div class="section-head">
+
+          <div>
+
+            <div class="eyebrow">
+              Вся коллекция
+            </div>
+
+            <h2>
+              За всё время
+            </h2>
+
+          </div>
+
+        </div>
+
+
+        <div class="library-summary">
+
+          <div class="big-total">
+
+            <strong>
+              ${state.books.length}
+            </strong>
+
+            <span>
+              книг всего
+            </span>
+
+          </div>
+
+
+          <div class="status-list">
+
+            ${Object.entries(
+              allCounts
+            )
+              .map(
+                ([status, value]) => `
+                  <div class="status-item">
+
+                    <span>
+                      ${esc(status)}
+                    </span>
+
+                    <strong>
+                      ${value}
+                    </strong>
+
+                  </div>
+                `
+              )
+              .join('')}
+
+          </div>
 
         </div>
 
@@ -2736,6 +4246,24 @@ function bindDynamic() {
 
       }
     );
+
+  $('#statsYearFilter')
+  ?.addEventListener(
+    'change',
+    e => {
+
+      state.statsYear =
+        e.target.value === 'all'
+          ? 'all'
+          : Number(
+              e.target.value
+            );
+
+      render();
+
+    }
+  );
+  
 }
 
 
